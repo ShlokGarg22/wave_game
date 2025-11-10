@@ -24,6 +24,7 @@ class Enemy:
         self.radius = config.PLAYER_SIZE // 2
         self.enemy_type = enemy_type
         self.id = f"enemy_{random.randint(1000, 9999)}"
+        self.is_boss = False  # Will be set to True for boss enemies
         
         # Health and combat
         self.max_health = config.ENEMY_BASE_HEALTH
@@ -151,6 +152,28 @@ class Enemy:
         if fired:
             self.shots_fired += 1
     
+    def make_boss(self):
+        """Convert this enemy into a boss"""
+        self.is_boss = True
+        self.id = f"BOSS_{random.randint(1000, 9999)}"
+        
+        # Apply boss multipliers
+        self.max_health = int(self.max_health * config.BOSS_HEALTH_MULTIPLIER)
+        self.health = self.max_health
+        self.radius = int(self.radius * config.BOSS_SIZE_MULTIPLIER)
+        self.speed = int(self.speed * config.BOSS_SPEED_MULTIPLIER)
+        self.damage = int(self.damage * config.BOSS_DAMAGE_MULTIPLIER)
+        self.detection_range = int(self.detection_range * 1.5)  # Bosses detect from further
+        
+        # Visual distinction - make boss darker/more menacing
+        r, g, b = self.color
+        self.color = (min(255, r + 50), max(0, g - 50), max(0, b - 50))
+        
+        # Boost weapon if available
+        if self.weapon:
+            self.weapon.fire_cooldown /= config.BOSS_FIRE_RATE_MULTIPLIER
+            self.weapon.damage = int(self.weapon.damage * config.BOSS_DAMAGE_MULTIPLIER)
+    
     def draw(self, screen: pygame.Surface):
         """Draw the enemy"""
         if not self.alive:
@@ -176,12 +199,16 @@ class Enemy:
         # Draw type indicator
         self._draw_type_indicator(enemy_surface)
         
+        # Draw boss crown if this is a boss
+        if self.is_boss:
+            self._draw_boss_crown(enemy_surface)
+        
         # Draw to screen
         screen.blit(enemy_surface, 
                    (int(self.pos[0] - self.radius), 
                     int(self.pos[1] - self.radius)))
         
-        # Draw health bar
+        # Draw health bar (bigger for bosses)
         self._draw_health_bar(screen)
     
     def _draw_type_indicator(self, surface: pygame.Surface):
@@ -232,12 +259,34 @@ class Enemy:
                            (center_x + 5, center_y), 
                            (center_x + 3, center_y + 2), 2)
     
+    def _draw_boss_crown(self, surface: pygame.Surface):
+        """Draw a crown above the boss"""
+        crown_color = (255, 215, 0)  # Gold
+        center_x, center_y = self.radius, int(self.radius * 0.3)
+        
+        # Crown base
+        crown_width = int(self.radius * 0.6)
+        crown_height = int(self.radius * 0.3)
+        
+        # Draw crown with three points
+        points = [
+            (center_x - crown_width//2, center_y + crown_height//2),  # Bottom left
+            (center_x - crown_width//3, center_y - crown_height//2),  # Left peak
+            (center_x - crown_width//6, center_y),                     # Left valley
+            (center_x, center_y - crown_height),                       # Center peak
+            (center_x + crown_width//6, center_y),                     # Right valley
+            (center_x + crown_width//3, center_y - crown_height//2),  # Right peak
+            (center_x + crown_width//2, center_y + crown_height//2),  # Bottom right
+        ]
+        pygame.draw.polygon(surface, crown_color, points)
+        pygame.draw.polygon(surface, (200, 180, 0), points, 2)  # Border
+    
     def _draw_health_bar(self, screen: pygame.Surface):
         """Draw enemy health bar"""
-        bar_width = 30
-        bar_height = 4
+        bar_width = 40 if self.is_boss else 30  # Bigger health bar for bosses
+        bar_height = 6 if self.is_boss else 4
         bar_x = self.pos[0] - bar_width // 2
-        bar_y = self.pos[1] - self.radius - 10
+        bar_y = self.pos[1] - self.radius - (15 if self.is_boss else 10)
         
         # Background
         pygame.draw.rect(screen, (50, 50, 50), 
@@ -346,20 +395,46 @@ class EnemySpawner:
         self.enemies.clear()
         self.spawn_queue.clear()
         
-        # Calculate enemy count and types for this wave
-        enemy_count = config.WAVE_BASE_ENEMIES + (wave_number - 1) * config.WAVE_ENEMY_INCREMENT
+        # Check if this is a boss wave
+        is_boss_wave = (wave_number % config.BOSS_WAVE_INTERVAL == 0)
         
-        # Determine enemy mix based on wave
-        enemy_types = self._get_enemy_mix_for_wave(wave_number, enemy_count)
-        
-        # Queue enemies for spawning
-        for enemy_type in enemy_types:
-            spawn_pos = map_generator.get_spawn_position('enemy', len(self.spawn_queue), enemy_count)
+        if is_boss_wave:
+            # Boss wave - spawn 1 boss + some regular enemies
+            enemy_count = max(3, config.WAVE_BASE_ENEMIES + (wave_number - 1) // 2)
+            enemy_types = self._get_enemy_mix_for_wave(wave_number, enemy_count)
+            
+            # Make the first enemy a boss
+            boss_pos = map_generator.get_spawn_position('enemy', 0, enemy_count)
             self.spawn_queue.append({
-                'type': enemy_type,
-                'pos': spawn_pos,
-                'spawn_delay': random.uniform(0.5, 2.0)  # Stagger spawns
+                'type': enemy_types[0],
+                'pos': boss_pos,
+                'spawn_delay': 1.0,
+                'is_boss': True
             })
+            
+            # Add remaining regular enemies
+            for i, enemy_type in enumerate(enemy_types[1:], start=1):
+                spawn_pos = map_generator.get_spawn_position('enemy', i, enemy_count)
+                self.spawn_queue.append({
+                    'type': enemy_type,
+                    'pos': spawn_pos,
+                    'spawn_delay': random.uniform(1.5, 3.0),
+                    'is_boss': False
+                })
+        else:
+            # Regular wave
+            enemy_count = config.WAVE_BASE_ENEMIES + (wave_number - 1) * config.WAVE_ENEMY_INCREMENT
+            enemy_types = self._get_enemy_mix_for_wave(wave_number, enemy_count)
+            
+            # Queue enemies for spawning
+            for i, enemy_type in enumerate(enemy_types):
+                spawn_pos = map_generator.get_spawn_position('enemy', i, enemy_count)
+                self.spawn_queue.append({
+                    'type': enemy_type,
+                    'pos': spawn_pos,
+                    'spawn_delay': random.uniform(0.5, 2.0),
+                    'is_boss': False
+                })
         
         self.spawn_timer = config.WAVE_BREAK_TIME
     
@@ -410,6 +485,10 @@ class EnemySpawner:
             # Spawn next enemy
             spawn_data = self.spawn_queue.pop(0)
             enemy = self._create_enemy(spawn_data['type'], spawn_data['pos'])
+            
+            # Make this enemy a boss if specified
+            if spawn_data.get('is_boss', False):
+                enemy.make_boss()
             
             # Set up enemy
             enemy.set_collision_manager(collision_manager)

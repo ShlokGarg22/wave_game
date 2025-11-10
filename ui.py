@@ -197,9 +197,18 @@ class UI:
         x = config.SCREEN_WIDTH // 2
         y = 20
         
+        # Check if this is a boss wave
+        is_boss_wave = (wave_info['number'] % config.BOSS_WAVE_INTERVAL == 0)
+        
         # Wave number
         wave_text = f"WAVE {wave_info['number']}"
-        text_surface = self.font_large.render(wave_text, True, self.text_color)
+        if is_boss_wave:
+            wave_text = f"⚔ BOSS WAVE {wave_info['number']} ⚔"
+            wave_color = (255, 215, 0)  # Gold color for boss waves
+        else:
+            wave_color = self.text_color
+            
+        text_surface = self.font_large.render(wave_text, True, wave_color)
         text_rect = text_surface.get_rect(centerx=x, y=y)
         screen.blit(text_surface, text_rect)
         

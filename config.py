@@ -115,8 +115,12 @@ WALL_CLEARANCE_EDGES = 50  # pixels
 WAVE_BREAK_TIME = 5.0  # seconds
 WAVE_BASE_ENEMIES = 3
 WAVE_ENEMY_INCREMENT = 2
-BOSS_WAVE_INTERVAL = 5
-BOSS_HEALTH_MULTIPLIER = 2.0
+BOSS_WAVE_INTERVAL = 5  # Boss appears every 5 waves
+BOSS_HEALTH_MULTIPLIER = 3.0  # Boss has 3x health
+BOSS_SIZE_MULTIPLIER = 1.5  # Boss is 1.5x larger
+BOSS_SPEED_MULTIPLIER = 0.8  # Boss is slightly slower
+BOSS_DAMAGE_MULTIPLIER = 1.5  # Boss deals 1.5x damage
+BOSS_FIRE_RATE_MULTIPLIER = 1.3  # Boss shoots 30% faster
 
 # Particle System
 PARTICLE_MAX_COUNT = 500
