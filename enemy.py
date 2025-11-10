@@ -28,7 +28,7 @@ class Enemy:
         # Health and combat
         self.max_health = config.ENEMY_BASE_HEALTH
         self.health = self.max_health
-        self.detection_range = 300
+        self.detection_range = 700  # Increased from 300 for more aggressive enemies
         self.damage = 10
         
         # Movement

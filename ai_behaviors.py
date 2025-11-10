@@ -181,7 +181,7 @@ class RusherAI(AIBehavior):
     
     def __init__(self, entity, collision_manager: CollisionManager):
         super().__init__(entity, collision_manager)
-        self.entity.detection_range = 400
+        self.entity.detection_range = 800  # Increased from 400
         self.charge_speed = config.RUSHER_SPEED
     
     def _make_decision(self, all_entities: List) -> AIDecision:
@@ -198,28 +198,34 @@ class RusherAI(AIBehavior):
             self.last_seen_player_pos = self.target_player.pos
             self.last_seen_time = pygame.time.get_ticks() / 1000.0
         
-        # State transitions
+        # Always track player position even if can't see them
+        if not self.last_seen_player_pos:
+            self.last_seen_player_pos = self.target_player.pos
+        
+        # Use current player position if we can see them, otherwise last known
+        target_pos = self.target_player.pos if can_see_player else self.last_seen_player_pos
+        
+        # State transitions - always engage
         if player_distance < config.RUSHER_ATTACK_RANGE and can_see_player:
             decision.state = AIState.ATTACK
-        elif can_see_player or player_distance < self.entity.detection_range:
-            decision.state = AIState.CHASE
         else:
-            decision.state = AIState.PATROL
+            # Always chase the player (or last known position)
+            decision.state = AIState.CHASE
         
         # Behavior based on state
         if decision.state == AIState.CHASE or decision.state == AIState.ATTACK:
             # Move directly towards player
-            if self.last_seen_player_pos:
+            if target_pos:
                 direction = normalize_vector((
-                    self.last_seen_player_pos[0] - self.entity.pos[0],
-                    self.last_seen_player_pos[1] - self.entity.pos[1]
+                    target_pos[0] - self.entity.pos[0],
+                    target_pos[1] - self.entity.pos[1]
                 ))
                 decision.move_direction = direction
                 decision.look_direction = math.atan2(direction[1], direction[0])
-                decision.target_pos = self.last_seen_player_pos
+                decision.target_pos = target_pos
         
-        # Fire when in attack range
-        if decision.state == AIState.ATTACK and can_see_player:
+        # Fire when in attack range or chasing and can see player
+        if (decision.state == AIState.ATTACK or decision.state == AIState.CHASE) and can_see_player:
             decision.should_fire = True
         
         return decision
@@ -230,7 +236,7 @@ class SniperAI(AIBehavior):
     
     def __init__(self, entity, collision_manager: CollisionManager):
         super().__init__(entity, collision_manager)
-        self.entity.detection_range = 600
+        self.entity.detection_range = 900  # Increased from 600
         self.preferred_range = config.SNIPER_PREFERRED_RANGE
         self.retreat_range = config.SNIPER_RETREAT_RANGE
         self.shot_prepare_timer = 0
@@ -249,34 +255,40 @@ class SniperAI(AIBehavior):
             self.last_seen_player_pos = self.target_player.pos
             self.last_seen_time = pygame.time.get_ticks() / 1000.0
         
-        # State transitions
-        if player_distance < self.retreat_range and can_see_player:
+        # Always track player position even if can't see them
+        if not self.last_seen_player_pos:
+            self.last_seen_player_pos = self.target_player.pos
+        
+        # Use current player position if we can see them, otherwise last known
+        target_pos = self.target_player.pos if can_see_player else self.last_seen_player_pos
+        
+        # State transitions - snipers always maintain position relative to player
+        if player_distance < self.retreat_range:
             decision.state = AIState.RETREAT
         elif (player_distance > self.preferred_range - 50 and 
-              player_distance < self.preferred_range + 50 and can_see_player):
+              player_distance < self.preferred_range + 50):
             decision.state = AIState.ATTACK
-        elif can_see_player:
-            decision.state = AIState.CHASE
         else:
-            decision.state = AIState.PATROL
+            # Move towards preferred range
+            decision.state = AIState.CHASE
         
         # Behavior based on state
         if decision.state == AIState.RETREAT:
             # Move away from player
-            if self.last_seen_player_pos:
+            if target_pos:
                 direction = normalize_vector((
-                    self.entity.pos[0] - self.last_seen_player_pos[0],
-                    self.entity.pos[1] - self.last_seen_player_pos[1]
+                    self.entity.pos[0] - target_pos[0],
+                    self.entity.pos[1] - target_pos[1]
                 ))
                 decision.move_direction = direction
                 decision.look_direction = math.atan2(-direction[1], -direction[0])
         
         elif decision.state == AIState.CHASE:
             # Move to preferred range
-            if self.last_seen_player_pos:
+            if target_pos:
                 direction_to_player = normalize_vector((
-                    self.last_seen_player_pos[0] - self.entity.pos[0],
-                    self.last_seen_player_pos[1] - self.entity.pos[1]
+                    target_pos[0] - self.entity.pos[0],
+                    target_pos[1] - self.entity.pos[1]
                 ))
                 
                 # Move towards player but stop at preferred range
@@ -287,7 +299,7 @@ class SniperAI(AIBehavior):
         
         elif decision.state == AIState.ATTACK:
             # Stay still and aim
-            if self.last_seen_player_pos:
+            if target_pos:
                 # Predict player movement for leading shots
                 predicted_pos = self._get_predicted_player_position(0.5)  # 0.5s prediction
                 direction_to_predicted = normalize_vector((
@@ -296,7 +308,10 @@ class SniperAI(AIBehavior):
                 ))
                 
                 decision.look_direction = math.atan2(direction_to_predicted[1], direction_to_predicted[0])
-                decision.should_fire = True
+        
+        # Fire when in ATTACK state or RETREAT state (backing away while shooting)
+        if (decision.state == AIState.ATTACK or decision.state == AIState.RETREAT) and can_see_player:
+            decision.should_fire = True
         
         return decision
 
@@ -306,7 +321,8 @@ class DodgerAI(AIBehavior):
     
     def __init__(self, entity, collision_manager: CollisionManager):
         super().__init__(entity, collision_manager)
-        self.entity.detection_range = 350
+        self.entity.detection_range = 700  # Increased from 350
+        self.dodge_cooldown = 0
         self.strafe_direction = 1  # 1 for right, -1 for left
         self.strafe_timer = 0
         self.dash_cooldown = 0
@@ -326,15 +342,21 @@ class DodgerAI(AIBehavior):
             self.last_seen_player_pos = self.target_player.pos
             self.last_seen_time = pygame.time.get_ticks() / 1000.0
         
-        # Check for dodge
+        # Always track player position even if can't see them
+        if not self.last_seen_player_pos:
+            self.last_seen_player_pos = self.target_player.pos
+        
+        # Use current player position if we can see them, otherwise last known
+        target_pos = self.target_player.pos if can_see_player else self.last_seen_player_pos
+        
+        # Check for dodge (highest priority)
         if incoming_bullets and self.dodge_cooldown <= 0:
             decision.state = AIState.DODGE
-        elif player_distance < 200 and can_see_player:
+        elif player_distance < 200:
             decision.state = AIState.ATTACK
-        elif can_see_player:
-            decision.state = AIState.CHASE
         else:
-            decision.state = AIState.PATROL
+            # Always chase the player
+            decision.state = AIState.CHASE
         
         # Behavior based on state
         if decision.state == AIState.DODGE:
@@ -357,11 +379,11 @@ class DodgerAI(AIBehavior):
                 self.dash_cooldown = config.DODGER_DASH_COOLDOWN
         
         elif decision.state == AIState.CHASE or decision.state == AIState.ATTACK:
-            if self.last_seen_player_pos:
+            if target_pos:
                 # Move towards player but strafe
                 direction_to_player = normalize_vector((
-                    self.last_seen_player_pos[0] - self.entity.pos[0],
-                    self.last_seen_player_pos[1] - self.entity.pos[1]
+                    target_pos[0] - self.entity.pos[0],
+                    target_pos[1] - self.entity.pos[1]
                 ))
                 
                 # Update strafe direction periodically
@@ -383,8 +405,8 @@ class DodgerAI(AIBehavior):
                 decision.move_direction = combined_direction
                 decision.look_direction = math.atan2(direction_to_player[1], direction_to_player[0])
         
-        # Fire when in attack range
-        if decision.state == AIState.ATTACK and can_see_player:
+        # Fire when in attack range or chasing and can see player
+        if (decision.state == AIState.ATTACK or decision.state == AIState.CHASE) and can_see_player:
             decision.should_fire = True
         
         return decision
@@ -395,7 +417,7 @@ class FlankerAI(AIBehavior):
     
     def __init__(self, entity, collision_manager: CollisionManager):
         super().__init__(entity, collision_manager)
-        self.entity.detection_range = 500
+        self.entity.detection_range = 800  # Increased from 500
         self.flank_angle = math.radians(config.FLANKER_FLANK_ANGLE)
         self.flank_position = None
         self.path_update_timer = 0
@@ -414,23 +436,26 @@ class FlankerAI(AIBehavior):
             self.last_seen_player_pos = self.target_player.pos
             self.last_seen_time = pygame.time.get_ticks() / 1000.0
         
+        # Always track player position even if can't see them
+        if not self.last_seen_player_pos:
+            self.last_seen_player_pos = self.target_player.pos
+        
         # Update flank position periodically
         self.path_update_timer -= 1/60.0
         if self.path_update_timer <= 0 and self.last_seen_player_pos:
             self.flank_position = self._calculate_flank_position()
             self.path_update_timer = 2.0
         
-        # State transitions
+        # State transitions - flankers always try to get to flanking position
         if self.flank_position and player_distance < 300:
             # Check if we're in good flanking position
             if self._is_good_flanking_position():
                 decision.state = AIState.ATTACK
             else:
                 decision.state = AIState.CHASE
-        elif can_see_player:
-            decision.state = AIState.CHASE
         else:
-            decision.state = AIState.PATROL
+            # Always move towards player or flanking position
+            decision.state = AIState.CHASE
         
         # Behavior based on state
         if decision.state == AIState.CHASE and self.flank_position:
@@ -451,6 +476,9 @@ class FlankerAI(AIBehavior):
             ))
             
             decision.look_direction = math.atan2(direction_to_player[1], direction_to_player[0])
+        
+        # Fire when can see player (in both CHASE and ATTACK states)
+        if (decision.state == AIState.ATTACK or decision.state == AIState.CHASE) and can_see_player:
             decision.should_fire = True
         
         return decision

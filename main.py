@@ -225,6 +225,11 @@ class Game:
         # Update player
         self.player.update(dt, self.current_time)
         
+        # Check if player is dead
+        if self.player.is_dead():
+            self.game_over()
+            return
+        
         # Update wave system
         self._update_wave_system(dt)
         
@@ -333,6 +338,28 @@ class Game:
                     )
                     enemy1.pos = list(new_pos1)
                     enemy2.pos = list(new_pos2)
+        
+        # Player-enemy collisions (contact damage)
+        for enemy in enemies:
+            if not enemy.alive:
+                continue
+            
+            if self.collision_manager.check_entity_entity_collision(
+                self.player.pos, self.player.radius, enemy.pos, enemy.radius):
+                
+                # Apply contact damage to player (with cooldown)
+                time_since_last_contact = self.current_time - self.player.last_contact_damage_time
+                if (not self.player.invincible and not enemy.invincible and 
+                    time_since_last_contact >= config.ENEMY_CONTACT_COOLDOWN):
+                    self.player.take_damage(config.ENEMY_CONTACT_DAMAGE, self.current_time)
+                    self.player.last_contact_damage_time = self.current_time
+                
+                # Push player away from enemy
+                new_player_pos, new_enemy_pos = self.collision_manager.resolve_entity_entity_collision(
+                    self.player.pos, self.player.radius, enemy.pos, enemy.radius
+                )
+                self.player.pos = list(new_player_pos)
+                enemy.pos = list(new_enemy_pos)
     
     def _draw(self):
         """Draw everything"""

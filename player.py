@@ -38,6 +38,7 @@ class Player:
         self.regen_timer = 0
         self.invincible = False
         self.invincibility_timer = 0
+        self.last_contact_damage_time = 0  # For enemy contact damage cooldown
         
         # Combat
         self.weapon_manager = WeaponManager()
@@ -170,17 +171,9 @@ class Player:
     
     def _update_health_system(self, dt: float, current_time: float):
         """Update health regeneration and timers"""
-        # Check if we should start regenerating
-        if current_time - self.last_damage_time > config.PLAYER_REGEN_DELAY:
-            self.regen_timer += dt
-            
-            # Regenerate health
-            if self.regen_timer >= 1.0:  # Regenerate every second
-                if self.health < self.max_health:
-                    self.health = min(self.max_health, self.health + config.PLAYER_REGEN_RATE)
-                self.regen_timer = 0
-        else:
-            self.regen_timer = 0
+        # No auto-regeneration during gameplay
+        # Health only regenerates between waves
+        pass
     
     def _handle_shooting(self, current_time: float):
         """Handle weapon firing"""

@@ -44,6 +44,8 @@ ENEMY_BASE_ACCURACY = 0.7
 ENEMY_ACCURACY_SCALING = 0.05  # 5% increase per wave
 ENEMY_MAX_ACCURACY = 0.95
 ENEMY_SPAWN_INVINCIBILITY = 1.0  # seconds
+ENEMY_CONTACT_DAMAGE = 5  # Damage per contact with player
+ENEMY_CONTACT_COOLDOWN = 0.5  # Seconds between contact damage
 
 # AI Behavior Parameters
 AI_UPDATE_RATE = 6  # frames (10 FPS)
