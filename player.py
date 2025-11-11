@@ -50,6 +50,7 @@ class Player:
         self.mouse_pos = (0, 0)
         self.mouse_pressed = False
         self.last_shot_time = 0
+        self.reload_key_was_pressed = False  # Track reload key state to prevent continuous reload
         
         # Statistics
         self.kills = 0
@@ -92,7 +93,7 @@ class Player:
     
     def _handle_input(self):
         """Handle keyboard and mouse input"""
-        # Movement input
+        # Movement input (supports multiple keys simultaneously)
         self.move_direction = [0.0, 0.0]
         
         if config.KEY_UP in self.keys_pressed:
@@ -110,19 +111,23 @@ class Player:
             self.move_direction[0] /= length
             self.move_direction[1] /= length
         
-        # Weapon switching
+        # Weapon switching (check all keys, first one found wins)
         if config.KEY_WEAPON_1 in self.keys_pressed:
             self.weapon_manager.switch_weapon(0)
-        elif config.KEY_WEAPON_2 in self.keys_pressed:
+        if config.KEY_WEAPON_2 in self.keys_pressed:
             self.weapon_manager.switch_weapon(1)
-        elif config.KEY_WEAPON_3 in self.keys_pressed:
+        if config.KEY_WEAPON_3 in self.keys_pressed:
             self.weapon_manager.switch_weapon(2)
-        elif config.KEY_WEAPON_4 in self.keys_pressed:
+        if config.KEY_WEAPON_4 in self.keys_pressed:
             self.weapon_manager.switch_weapon(3)
         
-        # Reload
+        # Reload (trigger once per key press, not continuously)
         if config.KEY_RELOAD in self.keys_pressed:
-            self.weapon_manager.start_reload()
+            if not self.reload_key_was_pressed:
+                self.weapon_manager.start_reload()
+                self.reload_key_was_pressed = True
+        else:
+            self.reload_key_was_pressed = False
         
         # Update look direction based on mouse
         mouse_x, mouse_y = self.mouse_pos
@@ -299,6 +304,13 @@ class Player:
         self.damage_taken = 0
         self.time_alive = 0
         self.screen_shake_timer = 0
+        self.last_contact_damage_time = 0
+        
+        # Clear input states
+        self.keys_pressed = set()
+        self.mouse_pressed = False
+        self.move_direction = [0.0, 0.0]
+        self.reload_key_was_pressed = False
         
         # Reset weapons
         self.weapon_manager = WeaponManager()

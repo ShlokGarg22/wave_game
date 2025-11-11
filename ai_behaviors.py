@@ -126,27 +126,61 @@ class AIBehavior:
                            self.collision_manager.walls)
     
     def _get_predicted_player_position(self, prediction_time: float) -> Tuple[float, float]:
-        """Predict where player will be in the future"""
+        """Predict where player will be in the future using velocity tracking"""
         if not self.target_player:
             return self.last_seen_player_pos or self.entity.pos
         
-        # Use recent player velocity for prediction
-        if self.player_velocity_memory:
-            avg_velocity = [0.0, 0.0]
-            for mem in self.player_velocity_memory[-5:]:  # Last 5 entries
-                avg_velocity[0] += mem['velocity'][0]
-                avg_velocity[1] += mem['velocity'][1]
+        # Check if prediction is enabled
+        if not config.AI_PREDICTION_ENABLED:
+            return self.target_player.pos
+        
+        # Use recent player velocity for prediction with weighted average
+        if self.player_velocity_memory and len(self.player_velocity_memory) >= 2:
+            # Weight recent velocities more heavily (exponential moving average)
+            weighted_velocity = [0.0, 0.0]
+            total_weight = 0.0
             
-            count = min(len(self.player_velocity_memory), 5)
-            avg_velocity[0] /= count
-            avg_velocity[1] /= count
+            recent_memories = self.player_velocity_memory[-10:]  # Last 10 entries
+            for i, mem in enumerate(recent_memories):
+                # More recent = higher weight
+                weight = (i + 1) / len(recent_memories)
+                weighted_velocity[0] += mem['velocity'][0] * weight
+                weighted_velocity[1] += mem['velocity'][1] * weight
+                total_weight += weight
             
-            # Predict position
-            predicted_x = self.target_player.pos[0] + avg_velocity[0] * prediction_time
-            predicted_y = self.target_player.pos[1] + avg_velocity[1] * prediction_time
+            if total_weight > 0:
+                weighted_velocity[0] /= total_weight
+                weighted_velocity[1] /= total_weight
+            
+            # Calculate bullet travel time to target
+            dist = distance(self.entity.pos, self.target_player.pos)
+            bullet_speed = getattr(self.entity.weapon, 'bullet_speed', 600) if hasattr(self.entity, 'weapon') else 600
+            travel_time = dist / bullet_speed if bullet_speed > 0 else prediction_time
+            
+            # Use travel time for more accurate prediction
+            actual_prediction_time = min(travel_time, prediction_time * 2)
+            
+            # Apply prediction accuracy factor (adds some error)
+            accuracy_factor = config.AI_PREDICTION_ACCURACY
+            # Boss enemies get perfect prediction
+            if hasattr(self.entity, 'is_boss') and self.entity.is_boss:
+                accuracy_factor = 1.0
+            
+            # Add random error based on accuracy
+            error_x = random.uniform(-50, 50) * (1.0 - accuracy_factor)
+            error_y = random.uniform(-50, 50) * (1.0 - accuracy_factor)
+            
+            # Predict position with velocity and accuracy
+            predicted_x = self.target_player.pos[0] + weighted_velocity[0] * actual_prediction_time + error_x
+            predicted_y = self.target_player.pos[1] + weighted_velocity[1] * actual_prediction_time + error_y
+            
+            # Clamp to screen bounds
+            predicted_x = max(0, min(config.SCREEN_WIDTH, predicted_x))
+            predicted_y = max(0, min(config.SCREEN_HEIGHT, predicted_y))
             
             return (predicted_x, predicted_y)
         
+        # Fallback to current position if not enough data
         return self.target_player.pos
     
     def _detect_incoming_bullets(self) -> List[Tuple[float, float]]:
@@ -221,7 +255,18 @@ class RusherAI(AIBehavior):
                     target_pos[1] - self.entity.pos[1]
                 ))
                 decision.move_direction = direction
-                decision.look_direction = math.atan2(direction[1], direction[0])
+                
+                # Use predictive aiming when shooting
+                if can_see_player:
+                    predicted_pos = self._get_predicted_player_position(config.RUSHER_PREDICTION_TIME)
+                    direction_to_predicted = normalize_vector((
+                        predicted_pos[0] - self.entity.pos[0],
+                        predicted_pos[1] - self.entity.pos[1]
+                    ))
+                    decision.look_direction = math.atan2(direction_to_predicted[1], direction_to_predicted[0])
+                else:
+                    decision.look_direction = math.atan2(direction[1], direction[0])
+                
                 decision.target_pos = target_pos
         
         # Fire when in attack range or chasing and can see player
@@ -301,7 +346,7 @@ class SniperAI(AIBehavior):
             # Stay still and aim
             if target_pos:
                 # Predict player movement for leading shots
-                predicted_pos = self._get_predicted_player_position(0.5)  # 0.5s prediction
+                predicted_pos = self._get_predicted_player_position(config.SNIPER_PREDICTION_TIME)
                 direction_to_predicted = normalize_vector((
                     predicted_pos[0] - self.entity.pos[0],
                     predicted_pos[1] - self.entity.pos[1]
@@ -403,7 +448,17 @@ class DodgerAI(AIBehavior):
                 ))
                 
                 decision.move_direction = combined_direction
-                decision.look_direction = math.atan2(direction_to_player[1], direction_to_player[0])
+                
+                # Use predictive aiming when shooting
+                if can_see_player:
+                    predicted_pos = self._get_predicted_player_position(config.DODGER_PREDICTION_TIME)
+                    direction_to_predicted = normalize_vector((
+                        predicted_pos[0] - self.entity.pos[0],
+                        predicted_pos[1] - self.entity.pos[1]
+                    ))
+                    decision.look_direction = math.atan2(direction_to_predicted[1], direction_to_predicted[0])
+                else:
+                    decision.look_direction = math.atan2(direction_to_player[1], direction_to_player[0])
         
         # Fire when in attack range or chasing and can see player
         if (decision.state == AIState.ATTACK or decision.state == AIState.CHASE) and can_see_player:
@@ -469,13 +524,20 @@ class FlankerAI(AIBehavior):
             decision.target_pos = self.flank_position
         
         elif decision.state == AIState.ATTACK and self.last_seen_player_pos:
-            # Aim at player from flanking position
-            direction_to_player = normalize_vector((
-                self.last_seen_player_pos[0] - self.entity.pos[0],
-                self.last_seen_player_pos[1] - self.entity.pos[1]
-            ))
-            
-            decision.look_direction = math.atan2(direction_to_player[1], direction_to_player[0])
+            # Aim at player from flanking position with prediction
+            if can_see_player:
+                predicted_pos = self._get_predicted_player_position(config.FLANKER_PREDICTION_TIME)
+                direction_to_predicted = normalize_vector((
+                    predicted_pos[0] - self.entity.pos[0],
+                    predicted_pos[1] - self.entity.pos[1]
+                ))
+                decision.look_direction = math.atan2(direction_to_predicted[1], direction_to_predicted[0])
+            else:
+                direction_to_player = normalize_vector((
+                    self.last_seen_player_pos[0] - self.entity.pos[0],
+                    self.last_seen_player_pos[1] - self.entity.pos[1]
+                ))
+                decision.look_direction = math.atan2(direction_to_player[1], direction_to_player[0])
         
         # Fire when can see player (in both CHASE and ATTACK states)
         if (decision.state == AIState.ATTACK or decision.state == AIState.CHASE) and can_see_player:
