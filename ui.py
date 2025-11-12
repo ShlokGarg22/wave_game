@@ -81,6 +81,9 @@ class UI:
         elif game_state == 'MENU':
             self._draw_main_menu(screen)
         
+        elif game_state == 'SETTINGS':
+            self._draw_settings_menu(screen)
+        
         elif game_state == 'GAME_OVER':
             self._draw_game_over(screen, player)
         
@@ -98,6 +101,10 @@ class UI:
         # Ammo counter (bottom-right)
         self._draw_ammo_counter(screen, player)
         
+        # Dash cooldown indicator (bottom-left)
+        if config.DASH_ENABLED:
+            self._draw_dash_cooldown(screen, player)
+        
         # Wave info (top-center)
         self._draw_wave_info(screen, wave_info, enemies_remaining)
         
@@ -105,7 +112,7 @@ class UI:
         self._draw_performance_stats(screen, fps, entity_counts)
         
         # Low health warning
-        if player.health < player.max_health * 0.3:
+        if config.LOW_HEALTH_WARNING_ENABLED and player.health < player.max_health * 0.3:
             self._draw_low_health_warning(screen)
     
     def _draw_health_bar(self, screen: pygame.Surface, player):
@@ -191,6 +198,62 @@ class UI:
             text_surface = self.font_small.render(reload_text, True, (255, 100, 100))
             text_x = x + ammo_width // 2 - text_surface.get_width() // 2
             screen.blit(text_surface, (text_x, text_y + 20))
+    
+    def _draw_dash_cooldown(self, screen: pygame.Surface, player):
+        """Draw dash ability cooldown indicator"""
+        x, y = 20, config.SCREEN_HEIGHT - 80
+        size = 60
+        
+        # Background circle
+        pygame.draw.circle(screen, (40, 40, 40), (x + size // 2, y + size // 2), size // 2)
+        pygame.draw.circle(screen, (100, 100, 100), (x + size // 2, y + size // 2), size // 2, 2)
+        
+        # Dash icon (lightning bolt style)
+        icon_color = (100, 200, 255) if player.dash_cooldown <= 0 else (60, 60, 60)
+        center_x = x + size // 2
+        center_y = y + size // 2
+        
+        # Draw lightning bolt icon
+        points = [
+            (center_x, center_y - 15),
+            (center_x - 5, center_y),
+            (center_x + 2, center_y),
+            (center_x - 8, center_y + 15),
+            (center_x + 5, center_y - 2),
+            (center_x - 2, center_y - 2)
+        ]
+        pygame.draw.polygon(screen, icon_color, points)
+        
+        # Cooldown overlay (arc that fills up)
+        if player.dash_cooldown > 0:
+            cooldown_ratio = player.dash_cooldown / config.DASH_COOLDOWN
+            # Draw dark arc for cooldown progress
+            angle_start = -90  # Top of circle
+            angle_sweep = int(360 * cooldown_ratio)
+            
+            # Draw pie slice for cooldown
+            points = [(center_x, center_y)]
+            for angle in range(angle_start, angle_start + angle_sweep + 1, 5):
+                rad = math.radians(angle)
+                point_x = center_x + math.cos(rad) * (size // 2 - 2)
+                point_y = center_y + math.sin(rad) * (size // 2 - 2)
+                points.append((int(point_x), int(point_y)))
+            
+            if len(points) > 2:
+                pygame.draw.polygon(screen, (20, 20, 20, 180), points)
+        
+        # Dash text
+        dash_text = "DASH"
+        text_surface = self.font_small.render(dash_text, True, self.text_color)
+        text_x = x + size // 2 - text_surface.get_width() // 2
+        screen.blit(text_surface, (text_x, y + size + 5))
+        
+        # Cooldown text
+        if player.dash_cooldown > 0:
+            cooldown_text = f"{player.dash_cooldown:.1f}s"
+            text_surface = self.font_small.render(cooldown_text, True, (255, 100, 100))
+            text_x = x + size // 2 - text_surface.get_width() // 2
+            screen.blit(text_surface, (text_x, y + size + 25))
     
     def _draw_wave_info(self, screen: pygame.Surface, wave_info, enemies_remaining):
         """Draw wave information"""
@@ -293,9 +356,10 @@ class UI:
         
         # Menu buttons
         buttons = [
-            ("START GAME", config.SCREEN_HEIGHT // 2 - 40),
-            ("DIFFICULTY: " + config.get_difficulty_name().upper(), config.SCREEN_HEIGHT // 2 + 40),
-            ("CONTROLS", config.SCREEN_HEIGHT // 2 + 120),
+            ("START GAME", config.SCREEN_HEIGHT // 2 - 80),
+            ("DIFFICULTY: " + config.get_difficulty_name().upper(), config.SCREEN_HEIGHT // 2 - 10),
+            ("SETTINGS", config.SCREEN_HEIGHT // 2 + 60),
+            ("CONTROLS", config.SCREEN_HEIGHT // 2 + 130),
             ("QUIT", config.SCREEN_HEIGHT // 2 + 200)
         ]
         
@@ -339,8 +403,94 @@ class UI:
         diff_desc = config.DIFFICULTY_SETTINGS[config.CURRENT_DIFFICULTY]['description']
         desc_surface = self.font_small.render(diff_desc, True, (150, 150, 150))
         desc_x = config.SCREEN_WIDTH // 2 - desc_surface.get_width() // 2
-        desc_y = config.SCREEN_HEIGHT // 2 + 70
+        desc_y = config.SCREEN_HEIGHT // 2 + 20
         screen.blit(desc_surface, (desc_x, desc_y))
+    
+    def _draw_settings_menu(self, screen: pygame.Surface):
+        """Draw settings menu"""
+        # Background
+        screen.fill((0, 0, 0))
+        
+        # Title
+        title_text = "SETTINGS"
+        title_surface = self.font_large.render(title_text, True, self.text_color)
+        title_x = config.SCREEN_WIDTH // 2 - title_surface.get_width() // 2
+        title_y = 100
+        screen.blit(title_surface, (title_x, title_y))
+        
+        # Screen Effects Section
+        section_text = "Screen Effects"
+        section_surface = self.font_medium.render(section_text, True, (150, 150, 150))
+        section_x = config.SCREEN_WIDTH // 2 - section_surface.get_width() // 2
+        section_y = 200
+        screen.blit(section_surface, (section_x, section_y))
+        
+        # Checkboxes for screen effects
+        checkbox_size = 30
+        checkbox_x = config.SCREEN_WIDTH // 2 - 200
+        start_y = 260
+        spacing = 60
+        
+        settings_list = [
+            ("Screen Shake", config.SCREEN_SHAKE_ENABLED, "Shake screen on hit"),
+            ("Screen Flash", config.SCREEN_FLASH_ENABLED, "Flash effects on damage"),
+            ("Hit Stop", config.HIT_STOP_ENABLED, "Brief freeze on impact"),
+            ("Low Health Warning", config.LOW_HEALTH_WARNING_ENABLED, "Red vignette at low HP")
+        ]
+        
+        for i, (label, enabled, description) in enumerate(settings_list):
+            y_pos = start_y + i * spacing
+            
+            # Checkbox background
+            checkbox_rect = pygame.Rect(checkbox_x, y_pos, checkbox_size, checkbox_size)
+            mouse_pos = pygame.mouse.get_pos()
+            is_hovered = checkbox_rect.collidepoint(mouse_pos)
+            
+            # Draw checkbox
+            color = (60, 60, 80) if is_hovered else (40, 40, 60)
+            pygame.draw.rect(screen, color, checkbox_rect)
+            pygame.draw.rect(screen, (255, 255, 255), checkbox_rect, 2)
+            
+            # Draw checkmark if enabled
+            if enabled:
+                check_points = [
+                    (checkbox_x + 5, y_pos + checkbox_size // 2),
+                    (checkbox_x + checkbox_size // 3, y_pos + checkbox_size - 8),
+                    (checkbox_x + checkbox_size - 5, y_pos + 5)
+                ]
+                pygame.draw.lines(screen, (0, 255, 0), False, check_points, 3)
+            
+            # Label text
+            label_surface = self.font_medium.render(label, True, self.text_color)
+            label_x = checkbox_x + checkbox_size + 15
+            label_y = y_pos + checkbox_size // 2 - label_surface.get_height() // 2
+            screen.blit(label_surface, (label_x, label_y))
+            
+            # Description text
+            desc_surface = self.font_small.render(description, True, (120, 120, 120))
+            desc_x = label_x
+            desc_y = label_y + 25
+            screen.blit(desc_surface, (desc_x, desc_y))
+        
+        # Back button
+        back_button_width = 200
+        back_button_height = 50
+        back_button_x = config.SCREEN_WIDTH // 2 - back_button_width // 2
+        back_button_y = config.SCREEN_HEIGHT - 100
+        back_button_rect = pygame.Rect(back_button_x, back_button_y, back_button_width, back_button_height)
+        
+        mouse_pos = pygame.mouse.get_pos()
+        is_hovered = back_button_rect.collidepoint(mouse_pos)
+        color = (50, 50, 80) if is_hovered else (30, 30, 50)
+        
+        pygame.draw.rect(screen, color, back_button_rect)
+        pygame.draw.rect(screen, (255, 255, 255), back_button_rect, 2)
+        
+        back_text = "BACK"
+        back_surface = self.font_medium.render(back_text, True, self.text_color)
+        back_x = back_button_x + back_button_width // 2 - back_surface.get_width() // 2
+        back_y = back_button_y + back_button_height // 2 - back_surface.get_height() // 2
+        screen.blit(back_surface, (back_x, back_y))
     
     def _draw_game_over(self, screen: pygame.Surface, player):
         """Draw game over screen"""
@@ -434,6 +584,8 @@ class UI:
         """Handle mouse clicks on UI elements"""
         if game_state == 'MENU':
             return self._handle_menu_click(mouse_pos)
+        elif game_state == 'SETTINGS':
+            return self._handle_settings_click(mouse_pos)
         elif game_state == 'GAME_OVER':
             return self._handle_game_over_click(mouse_pos)
         elif game_state == 'PAUSED':
@@ -444,9 +596,10 @@ class UI:
     def _handle_menu_click(self, mouse_pos: Tuple[int, int]) -> str:
         """Handle main menu clicks"""
         buttons = [
-            ("START GAME", config.SCREEN_HEIGHT // 2 - 40, 200, 'PLAYING'),
-            ("DIFFICULTY: " + config.get_difficulty_name().upper(), config.SCREEN_HEIGHT // 2 + 40, 300, 'DIFFICULTY'),
-            ("CONTROLS", config.SCREEN_HEIGHT // 2 + 120, 200, 'CONTROLS'),
+            ("START GAME", config.SCREEN_HEIGHT // 2 - 80, 200, 'PLAYING'),
+            ("DIFFICULTY: " + config.get_difficulty_name().upper(), config.SCREEN_HEIGHT // 2 - 10, 300, 'DIFFICULTY'),
+            ("SETTINGS", config.SCREEN_HEIGHT // 2 + 60, 200, 'SETTINGS'),
+            ("CONTROLS", config.SCREEN_HEIGHT // 2 + 130, 200, 'CONTROLS'),
             ("QUIT", config.SCREEN_HEIGHT // 2 + 200, 200, 'QUIT')
         ]
         
@@ -460,6 +613,44 @@ class UI:
                 return next_state
         
         return 'MENU'
+    
+    def _handle_settings_click(self, mouse_pos: Tuple[int, int]) -> str:
+        """Handle settings menu clicks"""
+        # Checkbox parameters
+        checkbox_size = 30
+        checkbox_x = config.SCREEN_WIDTH // 2 - 200
+        start_y = 260
+        spacing = 60
+        
+        settings_list = [
+            ("SCREEN_SHAKE_ENABLED", config.SCREEN_SHAKE_ENABLED),
+            ("SCREEN_FLASH_ENABLED", config.SCREEN_FLASH_ENABLED),
+            ("HIT_STOP_ENABLED", config.HIT_STOP_ENABLED),
+            ("LOW_HEALTH_WARNING_ENABLED", config.LOW_HEALTH_WARNING_ENABLED)
+        ]
+        
+        # Check checkbox clicks
+        for i, (setting_name, _) in enumerate(settings_list):
+            y_pos = start_y + i * spacing
+            checkbox_rect = pygame.Rect(checkbox_x, y_pos, checkbox_size, checkbox_size)
+            
+            if checkbox_rect.collidepoint(mouse_pos):
+                # Toggle setting in config
+                current_value = getattr(config, setting_name)
+                setattr(config, setting_name, not current_value)
+                return 'SETTINGS'
+        
+        # Check back button
+        back_button_width = 200
+        back_button_height = 50
+        back_button_x = config.SCREEN_WIDTH // 2 - back_button_width // 2
+        back_button_y = config.SCREEN_HEIGHT - 100
+        back_button_rect = pygame.Rect(back_button_x, back_button_y, back_button_width, back_button_height)
+        
+        if back_button_rect.collidepoint(mouse_pos):
+            return 'MENU'
+        
+        return 'SETTINGS'
     
     def _handle_game_over_click(self, mouse_pos: Tuple[int, int]) -> str:
         """Handle game over clicks"""

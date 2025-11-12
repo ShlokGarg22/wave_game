@@ -217,6 +217,9 @@ class Game:
         elif new_state == 'CONTROLS':
             self.game_state = 'CONTROLS'
         
+        elif new_state == 'SETTINGS':
+            self.game_state = 'SETTINGS'
+        
         elif new_state == 'MENU':
             self.game_state = config.STATE_MENU
         

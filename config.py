@@ -36,6 +36,21 @@ PLAYER_REGEN_DELAY = 5.0  # seconds
 PLAYER_REGEN_RATE = 10  # health per second
 PLAYER_INVINCIBILITY_DURATION = 0.1  # seconds
 
+# Dash Ability Settings
+DASH_ENABLED = True
+DASH_DISTANCE = 150  # pixels
+DASH_DURATION = 0.15  # seconds
+DASH_COOLDOWN = 2.0  # seconds between dashes
+DASH_INVINCIBILITY = True  # Player is invincible during dash
+DASH_TRAIL_PARTICLES = 8  # Number of afterimage particles
+DASH_SPEED_MULTIPLIER = 10.0  # How fast the dash is
+
+# Screen Effects Settings (User Preferences)
+SCREEN_SHAKE_ENABLED = True  # Toggle screen shake
+SCREEN_FLASH_ENABLED = True  # Toggle screen flash effects
+HIT_STOP_ENABLED = True  # Toggle hit freeze frames
+LOW_HEALTH_WARNING_ENABLED = True  # Toggle low health vignette
+
 # Enemy Settings
 ENEMY_BASE_HEALTH = 40
 ENEMY_HEALTH_SCALING = 0.1  # 10% increase per wave
