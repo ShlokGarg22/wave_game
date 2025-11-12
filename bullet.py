@@ -13,20 +13,39 @@ import config
 class Bullet:
     """Represents a single bullet projectile"""
     
-    def __init__(self, pos: Tuple[float, float], velocity: Tuple[float, float],
-                 damage: int, owner_id: str, color: Tuple[int, int, int] = config.BULLET_COLOR):
+    def __init__(self, pos: Tuple[float, float] = (0, 0), velocity: Tuple[float, float] = (0, 0),
+                 damage: int = 0, owner_id: str = "", color: Tuple[int, int, int] = config.BULLET_COLOR):
         self.pos = list(pos)
         self.velocity = list(velocity)
         self.damage = damage
-        self.owner_id = owner_id  # 'player' or enemy ID
+        self.owner_id = owner_id
         self.color = color
         self.radius = config.BULLET_SIZE
         self.lifetime = config.BULLET_LIFETIME
         self.max_lifetime = config.BULLET_LIFETIME
-        self.trail_positions = []  # For bullet trail effect
+        self.trail_positions = []
         self.alive = True
+        self.birth_time = 0  # Track creation time for culling
         
         # Calculate max range based on lifetime and speed
+        speed = math.sqrt(velocity[0]**2 + velocity[1]**2) if velocity != (0, 0) else 0
+        self.max_range = speed * config.BULLET_LIFETIME
+    
+    def reset(self, pos: Tuple[float, float], velocity: Tuple[float, float],
+              damage: int, owner_id: str, color: Tuple[int, int, int], current_time: float):
+        """Reset bullet for reuse (object pooling)"""
+        self.pos = list(pos)
+        self.velocity = list(velocity)
+        self.damage = damage
+        self.owner_id = owner_id
+        self.color = color
+        self.lifetime = config.BULLET_LIFETIME
+        self.max_lifetime = config.BULLET_LIFETIME
+        self.trail_positions = []
+        self.alive = True
+        self.birth_time = current_time
+        
+        # Calculate max range
         speed = math.sqrt(velocity[0]**2 + velocity[1]**2)
         self.max_range = speed * config.BULLET_LIFETIME
     
@@ -35,10 +54,12 @@ class Bullet:
         if not self.alive:
             return
         
-        # Store trail position
-        self.trail_positions.append(tuple(self.pos))
-        if len(self.trail_positions) > config.BULLET_TRAIL_LENGTH:
-            self.trail_positions.pop(0)
+        # Store trail position (limit trail length for performance)
+        if len(self.trail_positions) < config.BULLET_TRAIL_LENGTH:
+            self.trail_positions.append(tuple(self.pos))
+        else:
+            # Rotate trail positions instead of constantly popping
+            self.trail_positions = self.trail_positions[1:] + [tuple(self.pos)]
         
         # Update position
         self.pos[0] += self.velocity[0] * dt
@@ -51,9 +72,10 @@ class Bullet:
         if self.lifetime <= 0:
             self.alive = False
         
-        # Check if bullet is out of bounds
-        if (self.pos[0] < -self.radius or self.pos[0] > config.SCREEN_WIDTH + self.radius or
-            self.pos[1] < -self.radius or self.pos[1] > config.SCREEN_HEIGHT + self.radius):
+        # Check if bullet is out of bounds (with cull distance)
+        cull_dist = config.BULLET_CULL_DISTANCE
+        if (self.pos[0] < -cull_dist or self.pos[0] > config.SCREEN_WIDTH + cull_dist or
+            self.pos[1] < -cull_dist or self.pos[1] > config.SCREEN_HEIGHT + cull_dist):
             self.alive = False
     
     def draw(self, screen: pygame.Surface):
@@ -131,37 +153,83 @@ class Bullet:
 
 
 class BulletManager:
-    """Manages all bullets in the game"""
+    """Manages all bullets in the game with object pooling"""
     
     def __init__(self):
         self.bullets: List[Bullet] = []
+        self.bullet_pool: List[Bullet] = []  # Inactive bullets for reuse
         self.bullet_count = 0
+        self.current_time = 0
+        
+        # Pre-create bullet pool for object pooling
+        if config.ENABLE_OBJECT_POOLING:
+            for _ in range(config.MAX_BULLETS_ON_SCREEN):
+                self.bullet_pool.append(Bullet())
     
-    def add_bullet(self, bullet: Bullet):
-        """Add a bullet to the manager"""
-        self.bullets.append(bullet)
+    def add_bullet(self, pos: Tuple[float, float], velocity: Tuple[float, float],
+                   damage: int, owner_id: str, color: Tuple[int, int, int] = config.BULLET_COLOR):
+        """Add a bullet using object pooling"""
+        # Check max bullets limit
+        if len(self.bullets) >= config.MAX_BULLETS_ON_SCREEN:
+            # Remove oldest bullet
+            if self.bullets:
+                self.bullets[0].alive = False
+        
+        # Check per-entity bullet limit
+        owner_bullet_count = sum(1 for b in self.bullets if b.alive and b.owner_id == owner_id)
+        if owner_bullet_count >= config.MAX_BULLETS_PER_ENTITY:
+            # Remove oldest bullet from this owner
+            for bullet in self.bullets:
+                if bullet.alive and bullet.owner_id == owner_id:
+                    bullet.alive = False
+                    break
+        
+        # Try to get bullet from pool
+        if config.ENABLE_OBJECT_POOLING and self.bullet_pool:
+            bullet = self.bullet_pool.pop()
+            bullet.reset(pos, velocity, damage, owner_id, color, self.current_time)
+            self.bullets.append(bullet)
+        else:
+            # Create new bullet if pool is empty
+            bullet = Bullet(pos, velocity, damage, owner_id, color)
+            bullet.birth_time = self.current_time
+            self.bullets.append(bullet)
+        
         self.bullet_count += 1
     
     def update(self, dt: float):
-        """Update all bullets"""
+        """Update all bullets and manage pooling"""
+        self.current_time += dt
+        
+        # Update active bullets
         for bullet in self.bullets[:]:
             bullet.update(dt)
+            
+            # Return dead bullets to pool
             if not bullet.alive:
                 self.bullets.remove(bullet)
+                if config.ENABLE_OBJECT_POOLING and len(self.bullet_pool) < config.MAX_BULLETS_ON_SCREEN:
+                    self.bullet_pool.append(bullet)
     
     def draw(self, screen: pygame.Surface):
-        """Draw all bullets"""
+        """Draw all active bullets"""
         for bullet in self.bullets:
-            bullet.draw(screen)
+            if bullet.alive:
+                bullet.draw(screen)
     
     def clear_bullets(self):
-        """Remove all bullets"""
+        """Remove all bullets and return to pool"""
+        if config.ENABLE_OBJECT_POOLING:
+            for bullet in self.bullets:
+                if len(self.bullet_pool) < config.MAX_BULLETS_ON_SCREEN:
+                    self.bullet_pool.append(bullet)
+        
         self.bullets.clear()
         self.bullet_count = 0
     
     def get_bullets_by_owner(self, owner_id: str) -> List[Bullet]:
         """Get all bullets owned by a specific entity"""
-        return [bullet for bullet in self.bullets if bullet.owner_id == owner_id]
+        return [bullet for bullet in self.bullets if bullet.alive and bullet.owner_id == owner_id]
     
     def get_live_bullets(self) -> List[Bullet]:
         """Get all active bullets"""

@@ -79,9 +79,9 @@ class Weapon:
         self.reload_timer = 0.0
     
     def fire(self, pos: Tuple[float, float], direction: float, 
-             owner_id: str, bullets: List[Bullet], 
+             owner_id: str, bullet_manager,
              particle_emitter: Optional[ParticleEmitter] = None) -> bool:
-        """Fire the weapon"""
+        """Fire the weapon using bullet manager"""
         if not self.can_fire():
             return False
         
@@ -89,8 +89,15 @@ class Weapon:
         spread_angle = direction + random.uniform(-self.spread/2, self.spread/2)
         velocity = vector_from_angle(spread_angle, self.bullet_speed)
         
-        bullet = Bullet(pos, velocity, self.damage, owner_id, self.color)
-        bullets.append(bullet)
+        # Apply difficulty damage modifier for player bullets
+        damage = self.damage
+        if owner_id == 'player':
+            damage = config.apply_difficulty_to_player_damage(self.damage)
+        else:
+            damage = config.apply_difficulty_to_enemy_damage(self.damage)
+        
+        # Use bullet manager's add_bullet method for pooling
+        bullet_manager.add_bullet(pos, velocity, damage, owner_id, self.color)
         
         # Update ammo and timers
         self.ammo -= 1
@@ -165,21 +172,30 @@ class Shotgun(Weapon):
         self.pellets = config.SHOTGUN_PELLETS
     
     def fire(self, pos: Tuple[float, float], direction: float, 
-             owner_id: str, bullets: List[Bullet], 
+             owner_id: str, bullet_manager,
              particle_emitter: Optional[ParticleEmitter] = None) -> bool:
-        """Fire shotgun pellets"""
+        """Fire shotgun pellets using bullet manager"""
         if not self.can_fire():
             return False
         
-        # Create multiple pellets
-        for i in range(self.pellets):
+        # Reduced pellet count for performance (was 8, now 5)
+        pellets = min(self.pellets, 5)
+        
+        # Apply difficulty damage modifier
+        damage = self.damage
+        if owner_id == 'player':
+            damage = config.apply_difficulty_to_player_damage(self.damage)
+        else:
+            damage = config.apply_difficulty_to_enemy_damage(self.damage)
+        
+        # Create multiple pellets using bullet manager
+        for i in range(pellets):
             # Calculate spread for this pellet
-            pellet_spread = (i - self.pellets // 2) * (self.spread / self.pellets)
+            pellet_spread = (i - pellets // 2) * (self.spread / pellets)
             spread_angle = direction + pellet_spread + random.uniform(-0.05, 0.05)
             
             velocity = vector_from_angle(spread_angle, self.bullet_speed)
-            bullet = Bullet(pos, velocity, self.damage, owner_id, self.color)
-            bullets.append(bullet)
+            bullet_manager.add_bullet(pos, velocity, damage, owner_id, self.color)
         
         # Update ammo and timers
         self.ammo -= 1

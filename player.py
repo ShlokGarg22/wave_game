@@ -22,11 +22,14 @@ class Player:
         self.pos = list(pos)
         self.velocity = [0.0, 0.0]
         self.radius = config.PLAYER_SIZE // 2
-        self.max_health = config.PLAYER_MAX_HEALTH
+        # Apply difficulty modifier to health
+        self.max_health = config.apply_difficulty_to_player_health(config.PLAYER_MAX_HEALTH)
         self.health = self.max_health
         self.speed = config.PLAYER_SPEED
         self.look_direction = 0.0  # radians
         self.color = config.PLAYER_COLOR
+        # Store base regen rate for difficulty scaling
+        self.base_regen_rate = config.PLAYER_REGEN_RATE
         
         # Movement
         self.move_direction = [0.0, 0.0]  # Normalized movement input
@@ -43,7 +46,7 @@ class Player:
         # Combat
         self.weapon_manager = WeaponManager()
         self.particle_emitter = None
-        self.bullets = None  # Will be set by game
+        self.bullet_manager = None  # Will be set by game
         
         # Input
         self.keys_pressed = set()
@@ -182,14 +185,14 @@ class Player:
     
     def _handle_shooting(self, current_time: float):
         """Handle weapon firing"""
-        if self.mouse_pressed and self.bullets is not None:
+        if self.mouse_pressed and self.bullet_manager is not None:
             # Fire current weapon
             fire_pos = (self.pos[0] + math.cos(self.look_direction) * 30,
                        self.pos[1] + math.sin(self.look_direction) * 30)
             
             fired = self.weapon_manager.fire(
                 fire_pos, self.look_direction, 'player', 
-                self.bullets, self.particle_emitter
+                self.bullet_manager, self.particle_emitter
             )
             
             if fired:
@@ -323,6 +326,6 @@ class Player:
         """Set particle emitter for effects"""
         self.particle_emitter = particle_emitter
     
-    def set_bullet_list(self, bullets: List[Bullet]):
-        """Set bullet list for shooting"""
-        self.bullets = bullets
+    def set_bullet_list(self, bullet_manager):
+        """Set bullet manager for shooting"""
+        self.bullet_manager = bullet_manager

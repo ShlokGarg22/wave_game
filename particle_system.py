@@ -14,8 +14,19 @@ import config
 class Particle:
     """Individual particle with position, velocity, and lifetime"""
     
-    def __init__(self, pos: Tuple[float, float], velocity: Tuple[float, float],
-                 color: Tuple[int, int, int], lifetime: float, size: int = 2):
+    def __init__(self, pos: Tuple[float, float] = (0, 0), velocity: Tuple[float, float] = (0, 0),
+                 color: Tuple[int, int, int] = (255, 255, 255), lifetime: float = 1.0, size: int = 2):
+        self.pos = list(pos)
+        self.velocity = list(velocity)
+        self.color = color
+        self.max_lifetime = lifetime
+        self.lifetime = lifetime
+        self.size = size
+        self.alpha = 255
+    
+    def reset(self, pos: Tuple[float, float], velocity: Tuple[float, float],
+              color: Tuple[int, int, int], lifetime: float, size: int = 2):
+        """Reset particle for reuse (object pooling)"""
         self.pos = list(pos)
         self.velocity = list(velocity)
         self.color = color
@@ -60,29 +71,66 @@ class Particle:
 
 
 class ParticleEmitter:
-    """Manages particle effects and emission"""
+    """Manages particle effects and emission with pooling"""
     
     def __init__(self):
         self.particles: List[Particle] = []
-        self.max_particles = config.PARTICLE_MAX_COUNT
+        self.particle_pool: List[Particle] = []
+        self.max_particles = config.MAX_PARTICLES_ON_SCREEN
+        
+        # Pre-create particle pool
+        for _ in range(self.max_particles):
+            self.particle_pool.append(Particle((0, 0), (0, 0), (255, 255, 255), 1.0))
     
     def update(self, dt: float):
-        """Update all particles"""
+        """Update all particles and manage pooling"""
         # Update existing particles
         for particle in self.particles[:]:
             particle.update(dt)
+            
+            # Check if particle is off-screen for culling
+            if (particle.pos[0] < -config.PARTICLE_CULL_DISTANCE or 
+                particle.pos[0] > config.SCREEN_WIDTH + config.PARTICLE_CULL_DISTANCE or
+                particle.pos[1] < -config.PARTICLE_CULL_DISTANCE or 
+                particle.pos[1] > config.SCREEN_HEIGHT + config.PARTICLE_CULL_DISTANCE):
+                particle.lifetime = 0
+            
+            # Return dead particles to pool
             if particle.lifetime <= 0:
                 self.particles.remove(particle)
+                if len(self.particle_pool) < self.max_particles:
+                    self.particle_pool.append(particle)
     
     def draw(self, screen: pygame.Surface):
-        """Draw all particles"""
-        for particle in self.particles:
-            particle.draw(screen)
+        """Draw all active particles (skip if too many for performance)"""
+        # Adaptive quality - skip some particles if too many
+        if config.ADAPTIVE_QUALITY and len(self.particles) > self.max_particles * 0.8:
+            # Draw every other particle when near limit
+            for i, particle in enumerate(self.particles):
+                if i % 2 == 0:
+                    particle.draw(screen)
+        else:
+            # Draw all particles normally
+            for particle in self.particles:
+                particle.draw(screen)
     
     def create_muzzle_flash(self, pos: Tuple[float, float], 
                           direction: float, color: Tuple[int, int, int]):
-        """Create muzzle flash effect"""
-        for _ in range(config.MUZZLE_FLASH_PARTICLES):
+        """Create muzzle flash effect with pooling and adaptive quality"""
+        # Reduce particle count if near limit (adaptive quality)
+        particle_count = config.MUZZLE_FLASH_PARTICLES
+        if config.ADAPTIVE_QUALITY and len(self.particles) > self.max_particles * 0.7:
+            particle_count = particle_count // 2
+        
+        for _ in range(particle_count):
+            # Check if we're at max particles
+            if len(self.particles) >= self.max_particles:
+                # Remove oldest particle to make room
+                if self.particles:
+                    old_particle = self.particles.pop(0)
+                    if len(self.particle_pool) < self.max_particles:
+                        self.particle_pool.append(old_particle)
+            
             # Random angle within cone
             spread = random.uniform(-0.3, 0.3)
             angle = direction + spread
@@ -103,16 +151,20 @@ class ParticleEmitter:
                 clamp(color[2] + color_variation, 0, 255)
             )
             
-            particle = Particle(
-                start_pos, velocity, particle_color,
-                random.uniform(0.05, config.MUZZLE_FLASH_LIFETIME),
-                random.randint(1, 3)
-            )
+            # Try to get particle from pool
+            if self.particle_pool:
+                particle = self.particle_pool.pop()
+                particle.reset(start_pos, velocity, particle_color,
+                             random.uniform(0.05, config.MUZZLE_FLASH_LIFETIME),
+                             random.randint(1, 3))
+            else:
+                particle = Particle(
+                    start_pos, velocity, particle_color,
+                    random.uniform(0.05, config.MUZZLE_FLASH_LIFETIME),
+                    random.randint(1, 3)
+                )
             
             self.particles.append(particle)
-            
-            # Remove oldest particles if over limit
-            self._cleanup_excess_particles()
     
     def create_blood_splatter(self, pos: Tuple[float, float], 
                             hit_direction: Tuple[float, float]):

@@ -72,10 +72,10 @@ class UI:
                     break
     
     def draw(self, screen: pygame.Surface, game_state: str, player=None, 
-             wave_info=None, enemies_remaining=0):
+             wave_info=None, enemies_remaining=0, fps=0, entity_counts=None):
         """Draw UI elements"""
         if game_state == 'PLAYING':
-            self._draw_hud(screen, player, wave_info, enemies_remaining)
+            self._draw_hud(screen, player, wave_info, enemies_remaining, fps, entity_counts)
             self._draw_crosshair(screen)
         
         elif game_state == 'MENU':
@@ -87,7 +87,7 @@ class UI:
         elif game_state == 'PAUSED':
             self._draw_pause_menu(screen)
     
-    def _draw_hud(self, screen: pygame.Surface, player, wave_info, enemies_remaining):
+    def _draw_hud(self, screen: pygame.Surface, player, wave_info, enemies_remaining, fps=0, entity_counts=None):
         """Draw in-game HUD"""
         if not player:
             return
@@ -100,6 +100,9 @@ class UI:
         
         # Wave info (top-center)
         self._draw_wave_info(screen, wave_info, enemies_remaining)
+        
+        # FPS counter and performance stats (top-right)
+        self._draw_performance_stats(screen, fps, entity_counts)
         
         # Low health warning
         if player.health < player.max_health * 0.3:
@@ -241,6 +244,34 @@ class UI:
         
         screen.blit(warning_surface, (0, 0))
     
+    def _draw_performance_stats(self, screen: pygame.Surface, fps=0, entity_counts=None):
+        """Draw FPS counter and entity counts"""
+        x = config.SCREEN_WIDTH - 150
+        y = 20
+        
+        # FPS
+        fps_color = (0, 255, 0) if fps >= 50 else (255, 255, 0) if fps >= 30 else (255, 0, 0)
+        fps_text = f"FPS: {int(fps)}"
+        text_surface = self.font_small.render(fps_text, True, fps_color)
+        screen.blit(text_surface, (x, y))
+        
+        # Entity counts if provided
+        if entity_counts:
+            y += 25
+            bullets_text = f"Bullets: {entity_counts.get('bullets', 0)}"
+            text_surface = self.font_small.render(bullets_text, True, self.text_color)
+            screen.blit(text_surface, (x, y))
+            
+            y += 20
+            particles_text = f"Particles: {entity_counts.get('particles', 0)}"
+            text_surface = self.font_small.render(particles_text, True, self.text_color)
+            screen.blit(text_surface, (x, y))
+            
+            y += 20
+            enemies_text = f"Enemies: {entity_counts.get('enemies', 0)}"
+            text_surface = self.font_small.render(enemies_text, True, self.text_color)
+            screen.blit(text_surface, (x, y))
+    
     def _draw_main_menu(self, screen: pygame.Surface):
         """Draw main menu"""
         # Background
@@ -262,14 +293,15 @@ class UI:
         
         # Menu buttons
         buttons = [
-            ("START GAME", config.SCREEN_HEIGHT // 2),
-            ("CONTROLS", config.SCREEN_HEIGHT // 2 + 80),
-            ("QUIT", config.SCREEN_HEIGHT // 2 + 160)
+            ("START GAME", config.SCREEN_HEIGHT // 2 - 40),
+            ("DIFFICULTY: " + config.get_difficulty_name().upper(), config.SCREEN_HEIGHT // 2 + 40),
+            ("CONTROLS", config.SCREEN_HEIGHT // 2 + 120),
+            ("QUIT", config.SCREEN_HEIGHT // 2 + 200)
         ]
         
         for text, y_pos in buttons:
             # Button background
-            button_width = 200
+            button_width = 300 if "DIFFICULTY" in text else 200
             button_height = 50
             button_x = config.SCREEN_WIDTH // 2 - button_width // 2
             button_rect = pygame.Rect(button_x, y_pos - button_height // 2, button_width, button_height)
@@ -278,7 +310,22 @@ class UI:
             mouse_pos = pygame.mouse.get_pos()
             is_hovered = button_rect.collidepoint(mouse_pos)
             
-            color = (50, 50, 80) if is_hovered else (30, 30, 50)
+            # Color based on difficulty if it's the difficulty button
+            if "DIFFICULTY" in text:
+                if "EASY" in text:
+                    base_color = (50, 80, 50)
+                elif "NORMAL" in text:
+                    base_color = (50, 50, 80)
+                elif "HARD" in text:
+                    base_color = (80, 50, 50)
+                elif "NIGHTMARE" in text:
+                    base_color = (80, 20, 20)
+                else:
+                    base_color = (30, 30, 50)
+                color = tuple(min(c + 20, 255) for c in base_color) if is_hovered else base_color
+            else:
+                color = (50, 50, 80) if is_hovered else (30, 30, 50)
+            
             pygame.draw.rect(screen, color, button_rect)
             pygame.draw.rect(screen, (255, 255, 255), button_rect, 2)
             
@@ -287,6 +334,13 @@ class UI:
             text_x = button_x + button_width // 2 - text_surface.get_width() // 2
             text_y = y_pos - text_surface.get_height() // 2
             screen.blit(text_surface, (text_x, text_y))
+        
+        # Difficulty description
+        diff_desc = config.DIFFICULTY_SETTINGS[config.CURRENT_DIFFICULTY]['description']
+        desc_surface = self.font_small.render(diff_desc, True, (150, 150, 150))
+        desc_x = config.SCREEN_WIDTH // 2 - desc_surface.get_width() // 2
+        desc_y = config.SCREEN_HEIGHT // 2 + 70
+        screen.blit(desc_surface, (desc_x, desc_y))
     
     def _draw_game_over(self, screen: pygame.Surface, player):
         """Draw game over screen"""
@@ -390,13 +444,14 @@ class UI:
     def _handle_menu_click(self, mouse_pos: Tuple[int, int]) -> str:
         """Handle main menu clicks"""
         buttons = [
-            ("START GAME", config.SCREEN_HEIGHT // 2, 'PLAYING'),
-            ("CONTROLS", config.SCREEN_HEIGHT // 2 + 80, 'CONTROLS'),
-            ("QUIT", config.SCREEN_HEIGHT // 2 + 160, 'QUIT')
+            ("START GAME", config.SCREEN_HEIGHT // 2 - 40, 200, 'PLAYING'),
+            ("DIFFICULTY: " + config.get_difficulty_name().upper(), config.SCREEN_HEIGHT // 2 + 40, 300, 'DIFFICULTY'),
+            ("CONTROLS", config.SCREEN_HEIGHT // 2 + 120, 200, 'CONTROLS'),
+            ("QUIT", config.SCREEN_HEIGHT // 2 + 200, 200, 'QUIT')
         ]
         
-        for text, y_pos, next_state in buttons:
-            button_width = 200
+        for text, y_pos, width, next_state in buttons:
+            button_width = width
             button_height = 50
             button_x = config.SCREEN_WIDTH // 2 - button_width // 2
             button_rect = pygame.Rect(button_x, y_pos - button_height // 2, button_width, button_height)

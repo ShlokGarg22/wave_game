@@ -155,11 +155,93 @@ SCREEN_SHAKE_DURATION = 0.2
 COLLISION_EPSILON = 0.1
 ENTITY_SPACING = 50  # minimum distance between enemies
 
+# Performance Optimization
+MAX_BULLETS_ON_SCREEN = 500  # Hard cap for all bullets
+MAX_BULLETS_PER_ENTITY = 30  # Max bullets per player/enemy
+MAX_PARTICLES_ON_SCREEN = 250  # Hard cap for particles
+BULLET_CULL_DISTANCE = 150  # Pixels off-screen before deletion
+BULLET_MAX_LIFETIME = 5.0  # Seconds before auto-deletion
+PARTICLE_CULL_DISTANCE = 100  # Pixels off-screen before deletion
+OFF_SCREEN_UPDATE_RATE = 5  # Update off-screen enemies every N frames
+ENABLE_OBJECT_POOLING = True  # Use object pooling for bullets
+ADAPTIVE_QUALITY = True  # Lower quality when FPS drops
+
 # Game States
 STATE_MENU = 0
 STATE_PLAYING = 1
 STATE_PAUSED = 2
 STATE_GAME_OVER = 3
+
+# Difficulty System
+DIFFICULTY_EASY = 0
+DIFFICULTY_NORMAL = 1
+DIFFICULTY_HARD = 2
+DIFFICULTY_NIGHTMARE = 3
+CURRENT_DIFFICULTY = DIFFICULTY_NORMAL  # Default difficulty
+
+# Difficulty Modifiers (applied based on CURRENT_DIFFICULTY)
+DIFFICULTY_SETTINGS = {
+    DIFFICULTY_EASY: {
+        'name': 'Easy',
+        'player_health_multiplier': 1.5,
+        'player_damage_multiplier': 1.3,
+        'player_regen_rate_multiplier': 1.5,
+        'enemy_health_multiplier': 0.7,
+        'enemy_damage_multiplier': 0.7,
+        'enemy_speed_multiplier': 0.8,
+        'enemy_accuracy_multiplier': 0.7,
+        'enemy_fire_rate_multiplier': 0.8,
+        'wave_enemy_count_multiplier': 0.7,
+        'contact_damage_multiplier': 0.5,
+        'boss_wave_interval': 6,  # Boss every 6 waves
+        'description': 'Relaxed pace, more forgiving'
+    },
+    DIFFICULTY_NORMAL: {
+        'name': 'Normal',
+        'player_health_multiplier': 1.0,
+        'player_damage_multiplier': 1.0,
+        'player_regen_rate_multiplier': 1.0,
+        'enemy_health_multiplier': 1.0,
+        'enemy_damage_multiplier': 1.0,
+        'enemy_speed_multiplier': 1.0,
+        'enemy_accuracy_multiplier': 1.0,
+        'enemy_fire_rate_multiplier': 1.0,
+        'wave_enemy_count_multiplier': 1.0,
+        'contact_damage_multiplier': 1.0,
+        'boss_wave_interval': 5,  # Boss every 5 waves
+        'description': 'Balanced challenge'
+    },
+    DIFFICULTY_HARD: {
+        'name': 'Hard',
+        'player_health_multiplier': 0.8,
+        'player_damage_multiplier': 0.9,
+        'player_regen_rate_multiplier': 0.7,
+        'enemy_health_multiplier': 1.3,
+        'enemy_damage_multiplier': 1.3,
+        'enemy_speed_multiplier': 1.15,
+        'enemy_accuracy_multiplier': 1.2,
+        'enemy_fire_rate_multiplier': 1.2,
+        'wave_enemy_count_multiplier': 1.3,
+        'contact_damage_multiplier': 1.5,
+        'boss_wave_interval': 4,  # Boss every 4 waves
+        'description': 'Intense combat, faster enemies'
+    },
+    DIFFICULTY_NIGHTMARE: {
+        'name': 'Nightmare',
+        'player_health_multiplier': 0.6,
+        'player_damage_multiplier': 0.8,
+        'player_regen_rate_multiplier': 0.5,
+        'enemy_health_multiplier': 1.8,
+        'enemy_damage_multiplier': 1.6,
+        'enemy_speed_multiplier': 1.3,
+        'enemy_accuracy_multiplier': 1.5,
+        'enemy_fire_rate_multiplier': 1.5,
+        'wave_enemy_count_multiplier': 1.5,
+        'contact_damage_multiplier': 2.0,
+        'boss_wave_interval': 3,  # Boss every 3 waves
+        'description': 'Brutal challenge, overwhelming odds'
+    }
+}
 
 # Controls
 KEY_UP = pygame.K_w
@@ -176,3 +258,44 @@ KEY_WEAPON_4 = pygame.K_4
 # Mouse
 MOUSE_LEFT = 1
 MOUSE_RIGHT = 3
+
+# Difficulty Helper Functions
+def get_difficulty_setting(key):
+    """Get a difficulty setting value for current difficulty"""
+    return DIFFICULTY_SETTINGS[CURRENT_DIFFICULTY].get(key, 1.0)
+
+def apply_difficulty_to_player_health(base_health):
+    """Apply difficulty multiplier to player health"""
+    return int(base_health * get_difficulty_setting('player_health_multiplier'))
+
+def apply_difficulty_to_player_damage(base_damage):
+    """Apply difficulty multiplier to player damage"""
+    return int(base_damage * get_difficulty_setting('player_damage_multiplier'))
+
+def apply_difficulty_to_enemy_health(base_health):
+    """Apply difficulty multiplier to enemy health"""
+    return int(base_health * get_difficulty_setting('enemy_health_multiplier'))
+
+def apply_difficulty_to_enemy_damage(base_damage):
+    """Apply difficulty multiplier to enemy damage"""
+    return int(base_damage * get_difficulty_setting('enemy_damage_multiplier'))
+
+def apply_difficulty_to_enemy_speed(base_speed):
+    """Apply difficulty multiplier to enemy speed"""
+    return base_speed * get_difficulty_setting('enemy_speed_multiplier')
+
+def get_boss_wave_interval():
+    """Get boss wave interval based on difficulty"""
+    return get_difficulty_setting('boss_wave_interval')
+
+def get_difficulty_name():
+    """Get current difficulty name"""
+    return DIFFICULTY_SETTINGS[CURRENT_DIFFICULTY]['name']
+
+def set_difficulty(difficulty_level):
+    """Set the game difficulty"""
+    global CURRENT_DIFFICULTY
+    if difficulty_level in DIFFICULTY_SETTINGS:
+        CURRENT_DIFFICULTY = difficulty_level
+        return True
+    return False

@@ -74,10 +74,10 @@ class Game:
         player_spawn = self.map_generator.get_spawn_position('player', 0, 1)
         self.player = Player(player_spawn)
         
-        # Set up player
+        # Set up player references
         self.player.set_collision_manager(self.collision_manager)
         self.player.set_particle_emitter(self.particle_emitter)
-        self.player.set_bullet_list(self.bullet_manager.bullets)
+        self.player.set_bullet_list(self.bullet_manager)
         self.player.game = self  # Reference back to game
         
         # Generate initial map
@@ -219,6 +219,14 @@ class Game:
         
         elif new_state == 'MENU':
             self.game_state = config.STATE_MENU
+        
+        elif new_state == 'DIFFICULTY':
+            # Cycle through difficulties
+            difficulties = [config.DIFFICULTY_EASY, config.DIFFICULTY_NORMAL, 
+                          config.DIFFICULTY_HARD, config.DIFFICULTY_NIGHTMARE]
+            current_index = difficulties.index(config.CURRENT_DIFFICULTY)
+            next_index = (current_index + 1) % len(difficulties)
+            config.set_difficulty(difficulties[next_index])
     
     def _update_game(self, dt):
         """Update game logic"""
@@ -237,7 +245,7 @@ class Game:
         all_entities = [self.player] + self.enemy_spawner.get_active_enemies()
         self.enemy_spawner.update(dt, self.player, all_entities, self.current_time,
                                 self.collision_manager, self.particle_emitter,
-                                self.bullet_manager.bullets, self)
+                                self.bullet_manager, self)
         
         # Update bullets
         self.bullet_manager.update(dt)
@@ -385,8 +393,14 @@ class Game:
             
             # Draw UI overlay
             wave_info = {'number': self.wave_number} if self.wave_number > 0 else None
+            fps = self.clock.get_fps()
+            entity_counts = {
+                'bullets': len(self.bullet_manager.bullets),
+                'particles': len(self.particle_emitter.particles),
+                'enemies': len(self.enemy_spawner.enemies)
+            }
             self.ui.draw(self.screen, self._get_ui_game_state(), 
-                        self.player, wave_info, self.enemies_remaining)
+                        self.player, wave_info, self.enemies_remaining, fps, entity_counts)
     
     def _draw_game_world(self, screen):
         """Draw the game world (map, entities, bullets, particles)"""

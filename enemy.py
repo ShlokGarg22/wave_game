@@ -26,21 +26,26 @@ class Enemy:
         self.id = f"enemy_{random.randint(1000, 9999)}"
         self.is_boss = False  # Will be set to True for boss enemies
         
-        # Health and combat
-        self.max_health = config.ENEMY_BASE_HEALTH
+        # Health and combat (apply difficulty modifiers)
+        base_health = config.ENEMY_BASE_HEALTH
+        self.max_health = config.apply_difficulty_to_enemy_health(base_health)
         self.health = self.max_health
         self.detection_range = 700  # Increased from 300 for more aggressive enemies
-        self.damage = 10
+        self.base_damage = 10  # Store base damage for difficulty scaling
+        self.damage = config.apply_difficulty_to_enemy_damage(self.base_damage)
         
-        # Movement
-        self.speed = 100
+        # Movement (apply difficulty speed modifier)
+        base_speed = 100
+        self.speed = config.apply_difficulty_to_enemy_speed(base_speed)
+        self.base_speed = base_speed  # Store for boss calculations
         self.move_direction = (0.0, 0.0)
         self.look_direction = 0.0
         self.ai_behavior = None
         
-        # Weapon
-        self.weapon = None
+        # Combat
+        self.weapon: Optional[Weapon] = None
         self.bullets = None
+        self.bullet_manager = None
         self.particle_emitter = None
         
         # State
@@ -138,7 +143,7 @@ class Enemy:
     
     def fire_weapon(self):
         """Fire enemy weapon"""
-        if not self.weapon or not self.bullets:
+        if not self.weapon or not self.bullet_manager:
             return
         
         # Calculate fire position
@@ -147,7 +152,7 @@ class Enemy:
         
         # Fire weapon
         fired = self.weapon.fire(fire_pos, self.look_direction, self.id,
-                                self.bullets, self.particle_emitter)
+                                self.bullet_manager, self.particle_emitter)
         
         if fired:
             self.shots_fired += 1
@@ -319,9 +324,9 @@ class Enemy:
         """Set particle emitter"""
         self.particle_emitter = particle_emitter
     
-    def set_bullet_list(self, bullets: List[Bullet]):
-        """Set bullet list"""
-        self.bullets = bullets
+    def set_bullet_list(self, bullet_manager):
+        """Set bullet manager"""
+        self.bullet_manager = bullet_manager
     
     def set_game_reference(self, game):
         """Set reference to main game"""
@@ -395,12 +400,14 @@ class EnemySpawner:
         self.enemies.clear()
         self.spawn_queue.clear()
         
-        # Check if this is a boss wave
-        is_boss_wave = (wave_number % config.BOSS_WAVE_INTERVAL == 0)
+        # Check if this is a boss wave (use difficulty-based interval)
+        boss_interval = config.get_boss_wave_interval()
+        is_boss_wave = (wave_number % boss_interval == 0)
         
         if is_boss_wave:
-            # Boss wave - spawn 1 boss + some regular enemies
-            enemy_count = max(3, config.WAVE_BASE_ENEMIES + (wave_number - 1) // 2)
+            # Boss wave - spawn 1 boss + some regular enemies (apply difficulty multiplier)
+            base_count = max(3, config.WAVE_BASE_ENEMIES + (wave_number - 1) // 2)
+            enemy_count = int(base_count * config.get_difficulty_setting('wave_enemy_count_multiplier'))
             enemy_types = self._get_enemy_mix_for_wave(wave_number, enemy_count)
             
             # Make the first enemy a boss
@@ -422,8 +429,9 @@ class EnemySpawner:
                     'is_boss': False
                 })
         else:
-            # Regular wave
-            enemy_count = config.WAVE_BASE_ENEMIES + (wave_number - 1) * config.WAVE_ENEMY_INCREMENT
+            # Regular wave (apply difficulty multiplier to enemy count)
+            base_count = config.WAVE_BASE_ENEMIES + (wave_number - 1) * config.WAVE_ENEMY_INCREMENT
+            enemy_count = int(base_count * config.get_difficulty_setting('wave_enemy_count_multiplier'))
             enemy_types = self._get_enemy_mix_for_wave(wave_number, enemy_count)
             
             # Queue enemies for spawning
@@ -475,7 +483,7 @@ class EnemySpawner:
         return enemy_types
     
     def update(self, dt: float, player, all_entities: List, current_time: float,
-               collision_manager, particle_emitter, bullets, game):
+               collision_manager, particle_emitter, bullet_manager, game):
         """Update enemy spawner and enemies"""
         # Handle spawning
         if self.spawn_timer > 0:
@@ -493,7 +501,7 @@ class EnemySpawner:
             # Set up enemy
             enemy.set_collision_manager(collision_manager)
             enemy.set_particle_emitter(particle_emitter)
-            enemy.set_bullet_list(bullets)
+            enemy.set_bullet_list(bullet_manager)
             enemy.set_game_reference(game)
             
             # Set up AI behavior
